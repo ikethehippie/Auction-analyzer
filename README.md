@@ -2,17 +2,16 @@
 
 Paste a Midwest.Auction or Equip-Bid auction URL and get a table of undervalued items based on eBay SOLD prices.
 
-## Deploy (Vercel)
-1) Push this folder to GitHub (or upload via desktop).
-2) In Vercel: New Project → Import the repo → Deploy.
-
 ## Local
-```bash
+```
 npm i
 npm run dev
 # open http://localhost:3000
 ```
 
+## Deploy (Vercel)
+- Import this repo on Vercel and deploy (no env vars required for the starter).
+- API route: `/api/analyze`
+
 ## Notes
-- Real-world reliability may require Playwright or a search API to avoid eBay throttling.
-- Selectors include fallbacks; send a failing URL if you need tweaks.
+- eBay HTML may change or throttle requests. For production, consider Playwright or a search API + caching.
