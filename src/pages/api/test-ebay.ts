@@ -3,19 +3,17 @@ import { ebayResale } from '../../server/ebay';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    // Allow both POST (JSON body) and GET (?title=...)
-    let title: string | undefined;
-
+    let title = '';
     if (req.method === 'POST') {
-      title = (req.body && req.body.title) || '';
+      title = (req.body?.title || '').toString();
     } else if (req.method === 'GET') {
-      title = (req.query.title as string) || '';
+      title = (req.query.title || '').toString();
     } else {
       res.setHeader('Allow', 'GET, POST');
       return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    if (!title?.trim()) {
+    if (!title.trim()) {
       return res.status(400).json({ error: 'Missing "title"' });
     }
 
