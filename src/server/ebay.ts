@@ -1,30 +1,39 @@
-import * as cheerio from 'cheerio';
+import cheerio from 'cheerio';
 
-/**
- * Simple eBay SOLD search scraper.
- * Returns median of first ~10-12 visible prices (rounded to nearest $1).
- */
-export async function ebayResale(title: string): Promise<{ resale: number|null, url: string } | null> {
-  const query = encodeURIComponent(title);
-  const url = `https://www.ebay.com/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1`;
-  try {
-    const html = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' }}).then(r => r.text());
-    const $ = cheerio.load(html);
-    const prices: number[] = [];
-    $('.s-item__price').each((_, el) => {
-      const t = $(el).text();
-      const m = t.replace(/[^0-9.,]/g, '').replace(/,/g, '');
-      const val = parseFloat(m);
-      if (!isNaN(val) && val > 0) prices.push(val);
+export async function ebayResale(query: string): Promise<{ resale: number | null, url: string, samples?: number[] }> {
+  const searchUrl =
+    `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_Sold=1&LH_Complete=1`;
+
+  // Fetch as server-side request
+  const html = await fetch(searchUrl, {
+    headers: {
+      // minimal UA to reduce bot-page responses
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    }
+  }).then(r => r.text());
+
+  const $ = cheerio.load(html);
+  const prices: number[] = [];
+
+  // 1) Modern search card selector (common)
+  $('.s-item').each((_, el) => {
+    const txt = $(el).find('.s-item__price').first().text();
+    const n = parseFloat((txt || '').replace(/[^0-9.]/g, ''));
+    if (!isNaN(n) && n > 0) prices.push(n);
+  });
+
+  // 2) Fallback: generic price nodes
+  if (prices.length === 0) {
+    $('.s-item__price, .s-item__detail--primary .SECONDARY_PRICE').each((_, el) => {
+      const n = parseFloat($(el).text().replace(/[^0-9.]/g, ''));
+      if (!isNaN(n) && n > 0) prices.push(n);
     });
-    const cleaned = prices.filter(p => p < 10000);
-    cleaned.sort((a,b)=>a-b);
-    const take = cleaned.slice(0, 12);
-    if (take.length === 0) return { resale: null, url };
-    const median = take.length % 2 === 1 ? take[(take.length-1)/2] : (take[take.length/2-1]+take[take.length/2])/2;
-    const rounded = Math.round(median);
-    return { resale: rounded, url };
-  } catch {
-    return { resale: null, url };
   }
+
+  // Deduplicate & sort descending; average top 3
+  const uniq = [...new Set(prices)].sort((a, b) => b - a);
+  const top = uniq.slice(0, 3);
+  const resale = top.length ? Math.round(top.reduce((a, b) => a + b, 0) / top.length) : null;
+
+  return { resale, url: searchUrl, samples: top };
 }
