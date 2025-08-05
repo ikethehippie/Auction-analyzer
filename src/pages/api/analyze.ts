@@ -1,48 +1,44 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { z } from 'zod';
-import { scrapeMidwest } from '../../server/scrapers/midwest';
-import { scrapeEquipbid } from '../../server/scrapers/equipbid';
-import { ebayResale } from '../../server/ebay';
+// at top (types)
+type Lot = { lotNumber: string; title: string; currentBid: number };
 
-const bodySchema = z.object({
-  auctionUrl: z.string().url()
-});
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).send('Method not allowed');
-  const parse = bodySchema.safeParse(req.body);
-  if (!parse.success) return res.status(400).send('Invalid input');
-  const { auctionUrl } = parse.data;
+  const debug = req.query.debug === '1';
+
+  // ...existing parsing/normalize...
 
   try {
-    let lots: { lotNumber: string; title: string; currentBid: number; }[] = [];
+    let lots: Lot[] = [];
+    let debugInfo: any = {};
 
     if (auctionUrl.includes('midwest.auction')) {
-      lots = await scrapeMidwest(auctionUrl);
+      const out = await scrapeMidwest(auctionUrl, { debug });
+      lots = out.items;
+      debugInfo = out.debug || {};
     } else if (auctionUrl.includes('equip-bid.com')) {
-      lots = await scrapeEquipbid(auctionUrl);
+      const out = await scrapeEquipbid(auctionUrl, { debug });
+      lots = out.items;
+      debugInfo = out.debug || {};
+      if (lots.length === 0 && !/\/lots\/?$/.test(auctionUrl)) {
+        const alt = auctionUrl.replace(/\/$/, '') + '/lots';
+        const out2 = await scrapeEquipbid(alt, { debug });
+        if (out2.items.length > 0) {
+          lots = out2.items;
+          debugInfo.retry = { url: alt, ...out2.debug };
+        }
+      }
     } else {
-      return res.status(400).send('Unsupported auction domain. Try midwest.auction or equip-bid.com');
+      return res.status(400).json({ error: 'Unsupported auction domain. Use midwest.auction or equip-bid.com' });
     }
 
-    const results = [];
-    for (const lot of lots) {
-      const ebay = await ebayResale(lot.title);
-      const resale = ebay?.resale ?? null;
-      const myMaxBid = resale ? ((resale/1.15)/3)/1.15 : null;
-      const undervalued = resale !== null && resale >= 55 && lot.currentBid <= resale/3;
-      results.push({
-        ...lot,
-        resale,
-        myMaxBid,
-        undervalued,
-        ebayUrl: ebay?.url
-      });
-    }
+    // …existing ebayResale loop…
 
-    res.status(200).json({ items: results });
-  } catch (e:any) {
-    console.error(e);
-    res.status(500).send(e.message || 'Server error');
+    const response = { items: results as any[] };
+    if (debug) (response as any).debug = debugInfo;
+    return res.status(200).json(response);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message || 'Server error' });
   }
 }
+
